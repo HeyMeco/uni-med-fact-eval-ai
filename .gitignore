@@ -32,3 +32,5 @@ env/
 
 # uv specific ignores
 .uv/ 
+
+.DS_Store

@@ -62,6 +62,103 @@ STAR_RATINGS = {
     5: "⭐⭐⭐⭐⭐"
 }
 
+# Define the JSON schema for structured output
+EVALUATION_SCHEMA = {
+    "name": "medical_evaluation",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "ratings": {
+                "type": "object",
+                "properties": {
+                    "com_eval_summary": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Completeness rating for the summary (1-5)"
+                    },
+                    "con_eval_summary": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Conciseness rating for the summary (1-5)"
+                    },
+                    "com_eval_sentences": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Completeness rating for the sentences (1-5)"
+                    },
+                    "con_eval_sentences": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Conciseness rating for the sentences (1-5)"
+                    },
+                    "com_eval_kps": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Completeness rating for key phrases (1-5)"
+                    },
+                    "con_eval_kps": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Conciseness rating for key phrases (1-5)"
+                    }
+                },
+                "required": [
+                    "com_eval_summary",
+                    "con_eval_summary",
+                    "com_eval_sentences",
+                    "con_eval_sentences",
+                    "com_eval_kps",
+                    "con_eval_kps"
+                ],
+                "additionalProperties": False
+            },
+            "key_elements": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "sentence": {
+                            "type": "integer",
+                            "description": "The index of the sentence containing the key element"
+                        },
+                        "index": {
+                            "type": "integer",
+                            "description": "The index of the word within the sentence"
+                        }
+                    },
+                    "required": ["sentence", "index"],
+                    "additionalProperties": False
+                },
+                "description": "Array of key elements identified in the text"
+            },
+            "explanation": {
+                "type": "object",
+                "properties": {
+                    "ratings_rationale": {
+                        "type": "string",
+                        "description": "Detailed explanation of the ratings given"
+                    },
+                    "key_elements_selection": {
+                        "type": "string",
+                        "description": "Explanation of how key elements were identified"
+                    }
+                },
+                "required": ["ratings_rationale", "key_elements_selection"],
+                "additionalProperties": False
+            }
+        },
+        "required": ["ratings", "key_elements", "explanation"],
+        "additionalProperties": False
+    }
+}
+
 def load_json_data(file_path='35964471.json'):
     try:
         with open(file_path, 'r') as file:
@@ -200,7 +297,7 @@ def highlight_article_text(article_text, article_tokens, selected_aspect_data):
 
 def evaluate_with_openrouter(text, aspect):
     """
-    Use OpenRouter API to evaluate the text for a specific aspect.
+    Use OpenRouter API to evaluate the text for a specific aspect using structured outputs.
     """
     # Create a placeholder for the debug information
     debug_container = st.expander("🔍 Debug Information", expanded=True)
@@ -209,7 +306,7 @@ def evaluate_with_openrouter(text, aspect):
         st.write("### API Configuration")
         st.json({
             "API_URL": OPENROUTER_URL,
-            "Model": "meta-llama/llama-3.3-8b-instruc:free",
+            "Model": "deepseek/deepseek-r1-0528:free",
             "Has_API_Key": bool(OPENROUTER_API_KEY)
         })
 
@@ -238,36 +335,22 @@ def evaluate_with_openrouter(text, aspect):
     {text}
 
     Only respond in format JSON with the following structure and DO NOT include any other text Before or After the JSON:
-    {{
-        "ratings": {{
-            "com_eval_summary": number,
-            "con_eval_summary": number,
-            "com_eval_sentences": number,
-            "con_eval_sentences": number,
-            "com_eval_kps": number,
-            "con_eval_kps": number
-        }},
-        "key_elements": [
-            {{"sentence": number, "index": number}}
-        ],
-        "explanation": {{
-            "ratings_rationale": string,
-            "key_elements_selection": string
-        }}
-    }}
-    
-    Include detailed explanations in the explanation field for why you chose each rating and how you selected the key elements.
     """
+
+    request_data = {
+        "model": "deepseek/deepseek-r1-0528:free",
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": EVALUATION_SCHEMA
+        }
+    }
 
     with debug_container:
         st.write("### Prompt")
         st.code(prompt, language="text")
         
-        st.write("### API Request")
-        request_data = {
-            "model": "meta-llama/llama-3.3-8b-instruct:free",
-            "messages": [{"role": "user", "content": prompt}]
-        }
+        st.write("### API Request with Schema")
         st.json(request_data)
 
     try:
