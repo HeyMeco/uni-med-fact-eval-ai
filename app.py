@@ -306,7 +306,7 @@ def evaluate_with_openrouter(text, aspect):
         st.write("### API Configuration")
         st.json({
             "API_URL": OPENROUTER_URL,
-            "Model": "deepseek/deepseek-r1-0528:free",
+            "Model": st.session_state.selected_model,
             "Has_API_Key": bool(OPENROUTER_API_KEY)
         })
 
@@ -320,37 +320,61 @@ def evaluate_with_openrouter(text, aspect):
         "HTTP-Referer": "https://localhost:8501",
     }
 
-    prompt = f"""Evaluate the following medical text for the aspect of {aspect}.
-    Provide ratings on a scale of 1-5 for:
-    1. Summary completeness
-    2. Summary conciseness
-    3. Sentence completeness
-    4. Sentence conciseness
-    5. Key phrases completeness
-    6. Key phrases conciseness
+    # Create a system message to enforce JSON output
+    system_message = """You are a medical text evaluation assistant. You must ALWAYS respond with a valid JSON object using this exact structure:
+{
+    "ratings": {
+        "com_eval_summary": <integer 1-5>,
+        "con_eval_summary": <integer 1-5>,
+        "com_eval_sentences": <integer 1-5>,
+        "con_eval_sentences": <integer 1-5>,
+        "com_eval_kps": <integer 1-5>,
+        "con_eval_kps": <integer 1-5>
+    },
+    "key_elements": [
+        {
+            "sentence": <integer>,
+            "index": <integer>
+        }
+    ],
+    "explanation": {
+        "ratings_rationale": "<string>",
+        "key_elements_selection": "<string>"
+    }
+}
 
-    Also identify the key sentences and phrases that are relevant to this aspect.
+IMPORTANT:
+1. Do not include any text before or after the JSON
+2. All rating values must be integers between 1 and 5
+3. The response must be valid JSON that can be parsed
+4. Do not include any markdown formatting or code blocks"""
 
-    Text:
-    {text}
+    user_message = f"""Evaluate the following medical text for the aspect of {aspect}.
+    
+Text to evaluate:
+{text}
 
-    Only respond in format JSON with the following structure and DO NOT include any other text Before or After the JSON:
-    """
+Provide:
+1. Ratings (1-5) for completeness and conciseness of:
+   - Summary
+   - Sentences
+   - Key phrases
+2. Key elements (sentence and word indices)
+3. Explanation of your ratings and selections
+
+Remember: Your response must be ONLY a valid JSON object with no additional text."""
 
     request_data = {
-        "model": "deepseek/deepseek-r1-0528:free",
-        "messages": [{"role": "user", "content": prompt}],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": EVALUATION_SCHEMA
-        }
+        "model": st.session_state.selected_model,
+        "messages": [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_message}
+        ],
+        "temperature": 0.1  # Lower temperature for more consistent JSON formatting
     }
 
     with debug_container:
-        st.write("### Prompt")
-        st.code(prompt, language="text")
-        
-        st.write("### API Request with Schema")
+        st.write("### API Request")
         st.json(request_data)
 
     try:
@@ -367,14 +391,47 @@ def evaluate_with_openrouter(text, aspect):
                 st.write("### Raw API Response")
                 st.json(result)
             
-            # Extract the JSON response from the message content
             try:
+                # Extract the JSON response from the message content
                 response_content = result['choices'][0]['message']['content']
+                
+                # Clean the response content to ensure it's valid JSON
+                response_content = response_content.strip()
+                if response_content.startswith('```json'):
+                    response_content = response_content[7:]
+                if response_content.endswith('```'):
+                    response_content = response_content[:-3]
+                response_content = response_content.strip()
+                
                 with debug_container:
                     st.write("### Response Content")
                     st.code(response_content, language="json")
                 
+                # Parse the JSON response
                 evaluation = json.loads(response_content)
+                
+                # Validate the required structure
+                required_keys = ['ratings', 'key_elements', 'explanation']
+                required_ratings = [
+                    'com_eval_summary', 'con_eval_summary',
+                    'com_eval_sentences', 'con_eval_sentences',
+                    'com_eval_kps', 'con_eval_kps'
+                ]
+                
+                # Check for required top-level keys
+                if not all(key in evaluation for key in required_keys):
+                    missing = [key for key in required_keys if key not in evaluation]
+                    raise ValueError(f"Missing required keys: {', '.join(missing)}")
+                
+                # Check for required rating keys
+                if not all(key in evaluation['ratings'] for key in required_ratings):
+                    missing = [key for key in required_ratings if key not in evaluation['ratings']]
+                    raise ValueError(f"Missing required rating keys: {', '.join(missing)}")
+                
+                # Validate ratings are integers between 1 and 5
+                for key, value in evaluation['ratings'].items():
+                    if not isinstance(value, int) or value < 1 or value > 5:
+                        raise ValueError(f"Invalid rating value for {key}: {value}. Must be integer between 1 and 5.")
                 
                 with debug_container:
                     st.write("### Parsed Evaluation")
@@ -394,28 +451,24 @@ def evaluate_with_openrouter(text, aspect):
                 
                 return evaluation
                 
-            except json.JSONDecodeError as e:
-                with debug_container:
-                    st.error("### JSON Parse Error")
-                    st.error(f"Error parsing response: {e}")
-                    st.write("Raw content that failed to parse:")
-                    st.code(response_content)
+            except json.JSONDecodeError as je:
+                st.error(f"Invalid JSON structure: {je}")
+                st.code(response_content)
                 return None
-                
-            except KeyError as e:
-                with debug_container:
-                    st.error("### Response Structure Error")
-                    st.error(f"Missing key in response: {e}")
-                    st.json(result)
+            except ValueError as ve:
+                st.error(f"Invalid response structure: {ve}")
+                st.code(response_content)
+                return None
+            except KeyError as ke:
+                st.error(f"Missing key in response: {ke}")
+                st.json(result)
                 return None
                 
     except requests.exceptions.RequestException as e:
-        with debug_container:
-            st.error("### API Request Error")
-            st.error(f"Error calling OpenRouter API: {e}")
-            if hasattr(e.response, 'text'):
-                st.write("Error response body:")
-                st.code(e.response.text)
+        st.error(f"Error calling OpenRouter API: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            st.write("Error response body:")
+            st.code(e.response.text)
         return None
 
 def main():
@@ -467,6 +520,21 @@ def main():
         "Select Aspect to Analyze",
         options=list(ASPECT_LABELS.keys()),
         format_func=lambda x: ASPECT_LABELS[x]
+    )
+
+    # Add model selector
+    if 'selected_model' not in st.session_state:
+        st.session_state.selected_model = "meta-llama/llama-3.3-8b-instruct:free"
+
+    st.selectbox(
+        "Select AI Model",
+        options=[
+            "deepseek/deepseek-r1-0528:free",
+            "meta-llama/llama-3.3-8b-instruct:free",
+            "meta-llama/llama-4-maverick:free",
+            "google/gemma-3-12b-it:free"
+        ],
+        key="selected_model"
     )
     
     # Add auto-evaluate button with debug option
