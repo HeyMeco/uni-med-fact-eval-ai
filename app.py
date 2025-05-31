@@ -530,6 +530,7 @@ def main():
         "Select AI Model",
         options=[
             "deepseek/deepseek-r1-0528:free",
+            "deepseek/deepseek-r1-0528-qwen3-8b:free",
             "meta-llama/llama-3.3-8b-instruct:free",
             "meta-llama/llama-4-maverick:free",
             "google/gemma-3-12b-it:free"
