@@ -295,7 +295,7 @@ def highlight_article_text(article_text, article_tokens, selected_aspect_data):
     
     return ' '.join(highlighted_sentences)
 
-def evaluate_with_openrouter(text, aspect):
+def evaluate_with_openrouter(text, aspect, aspect_data=None):
     """
     Use OpenRouter API to evaluate the text for a specific aspect using structured outputs.
     """
@@ -349,18 +349,30 @@ IMPORTANT:
 3. The response must be valid JSON that can be parsed
 4. Do not include any markdown formatting or code blocks"""
 
+    # Prepare the evaluation context with existing summary and key elements if available
+    evaluation_context = f"Aspect to evaluate: {aspect}\n\n"
+    if aspect_data:
+        evaluation_context += f"Existing summary: {aspect_data.get('summary', 'None')}\n\n"
+        if 'kes' in aspect_data:
+            evaluation_context += "Existing key elements:\n"
+            for ke in aspect_data['kes']:
+                evaluation_context += f"- Sentence {ke['sentence']}, Word {ke['index']}\n"
+        evaluation_context += "\n"
+
     user_message = f"""Evaluate the following medical text for the aspect of {aspect}.
-    
+
+{evaluation_context}
 Text to evaluate:
 {text}
 
-Provide:
-1. Ratings (1-5) for completeness and conciseness of:
-   - Summary
-   - Sentences
-   - Key phrases
-2. Key elements (sentence and word indices)
-3. Explanation of your ratings and selections
+Your task:
+1. Evaluate how well the existing summary and key elements capture the relevant information from the text
+2. Provide ratings (1-5) for completeness and conciseness of:
+   - Summary (how well does the existing summary capture the aspect?)
+   - Sentences (how well are the relevant sentences identified?)
+   - Key phrases (how well are the key elements identified?)
+3. Identify any missing or incorrect key elements
+4. Provide detailed explanations for your ratings and key element selections
 
 Remember: Your response must be ONLY a valid JSON object with no additional text."""
 
@@ -547,8 +559,11 @@ def main():
         # Join the article text for evaluation
         full_text = " ".join(article_text)
         
+        # Get the selected aspect data
+        selected_aspect_data = aspect_summaries.get(selected_aspect)
+        
         # Get AI evaluation
-        evaluation = evaluate_with_openrouter(full_text, ASPECT_LABELS[selected_aspect])
+        evaluation = evaluate_with_openrouter(full_text, ASPECT_LABELS[selected_aspect], selected_aspect_data)
         
         if evaluation:
             # Update the aspect data with AI evaluation
