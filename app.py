@@ -215,12 +215,43 @@ def create_evaluation_radar_chart(evaluations, title):
 def create_rating_section(title, prefix, initial_values):
     st.subheader(title)
     
+    # Add explanation of the evaluation criteria
+    if prefix == "completeness":
+        st.markdown("""
+        **Evaluation Criteria:**
+        Every piece of information is critical in medical text. The system output must be entirely complete, with no omissions.
+        
+        **Rating Scale:**
+        - 5 Stars: All information has been accurately found, cannot find any more relevant information
+        - 4 Stars: Most key information found, small amount of information missing
+        - 3 Stars: Some information found, some information missing
+        - 2 Stars: Most key information missing
+        - 1 Star: All key information missing
+        """)
+    else:  # conciseness
+        st.markdown("""
+        **Evaluation Criteria:**
+        The system output must be fully accurate, without any errors.
+        
+        **Rating Scale:**
+        - 5 Stars: All content is relevant to this aspect
+        - 4 Stars: Most content is relevant to this aspect
+        - 3 Stars: Some content is relevant, some irrelevant
+        - 2 Stars: Most content is irrelevant to this aspect
+        - 1 Star: All content is irrelevant or contains errors
+        """)
+    
     # Create columns for the three rating categories
     col1, col2, col3 = st.columns(3)
     
     with col1:
+        st.markdown("**Summary**")
+        if prefix == "completeness":
+            st.markdown("*Does the summary include all claims from the abstract on this aspect?*")
+        else:
+            st.markdown("*Does the summary contain irrelevant/incorrect information?*")
         summary_rating = st.selectbox(
-            "Summary",
+            "Summary Rating",
             options=list(STAR_RATINGS.keys()),
             format_func=lambda x: STAR_RATINGS[x],
             key=f"{prefix}_summary",
@@ -228,8 +259,13 @@ def create_rating_section(title, prefix, initial_values):
         )
         
     with col2:
+        st.markdown("**Sentences**")
+        if prefix == "completeness":
+            st.markdown("*Have all sentences related to this aspect been highlighted?*")
+        else:
+            st.markdown("*Are there highlighted sentences irrelevant to this aspect?*")
         sentences_rating = st.selectbox(
-            "Sentences",
+            "Sentences Rating",
             options=list(STAR_RATINGS.keys()),
             format_func=lambda x: STAR_RATINGS[x],
             key=f"{prefix}_sentences",
@@ -237,8 +273,13 @@ def create_rating_section(title, prefix, initial_values):
         )
         
     with col3:
+        st.markdown("**Key Phrases**")
+        if prefix == "completeness":
+            st.markdown("*Have all key phrases related to this aspect been highlighted?*")
+        else:
+            st.markdown("*Are there highlighted key phrases irrelevant to this aspect?*")
         kps_rating = st.selectbox(
-            "Key Phrases",
+            "Key Phrases Rating",
             options=list(STAR_RATINGS.keys()),
             format_func=lambda x: STAR_RATINGS[x],
             key=f"{prefix}_kps",
@@ -321,7 +362,39 @@ def evaluate_with_openrouter(text, aspect, aspect_data=None):
     }
 
     # Create a system message to enforce JSON output
-    system_message = """You are a medical text evaluation assistant. You must ALWAYS respond with a valid JSON object using this exact structure:
+    system_message = """You are a medical text evaluation assistant. You must evaluate medical text according to these specific criteria:
+
+COMPLETENESS EVALUATION:
+Every piece of information is critical in medical text. The system output must be entirely complete, with no omissions.
+
+Rating Scale for Completeness:
+5 Stars: All information has been accurately found, cannot find any more relevant information
+4 Stars: Most key information found, small amount of information missing
+3 Stars: Some information found, some information missing
+2 Stars: Most key information missing
+1 Star: All key information missing
+
+Evaluate completeness by answering:
+[Summary] Does the summary include all claims from the abstract on this aspect?
+[Sentences] Have all sentences related to this aspect been highlighted?
+[Key Phrases] Have all key phrases related to this aspect been highlighted?
+
+CONCISENESS EVALUATION:
+The system output must be fully accurate, without any errors.
+
+Rating Scale for Conciseness:
+5 Stars: All content is relevant to this aspect
+4 Stars: Most content is relevant to this aspect
+3 Stars: Some content is relevant, some irrelevant
+2 Stars: Most content is irrelevant to this aspect
+1 Star: All content is irrelevant or contains errors
+
+Evaluate conciseness by answering:
+[Summary] Does the summary contain irrelevant/incorrect information?
+[Sentences] Are there highlighted sentences irrelevant to this aspect?
+[Key Phrases] Are there highlighted key phrases irrelevant to this aspect?
+
+You must ALWAYS respond with a valid JSON object using this exact structure:
 {
     "ratings": {
         "com_eval_summary": <integer 1-5>,
