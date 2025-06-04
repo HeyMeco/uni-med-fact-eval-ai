@@ -278,6 +278,19 @@ def create_rating_section(title, prefix, initial_values):
     # Create columns for the three rating categories
     col1, col2, col3 = st.columns(3)
     
+    # Define widget keys
+    summary_key = f"{prefix}_summary"
+    sentences_key = f"{prefix}_sentences"
+    kps_key = f"{prefix}_kps"
+    
+    # Initialize or update session state
+    if summary_key not in st.session_state or st.session_state[summary_key] != initial_values['summary']:
+        st.session_state[summary_key] = initial_values['summary']
+    if sentences_key not in st.session_state or st.session_state[sentences_key] != initial_values['sentences']:
+        st.session_state[sentences_key] = initial_values['sentences']
+    if kps_key not in st.session_state or st.session_state[kps_key] != initial_values['kps']:
+        st.session_state[kps_key] = initial_values['kps']
+    
     with col1:
         st.markdown("**Summary**")
         if prefix == "completeness":
@@ -288,8 +301,7 @@ def create_rating_section(title, prefix, initial_values):
             "Summary Rating",
             options=list(STAR_RATINGS.keys()),
             format_func=lambda x: STAR_RATINGS[x],
-            key=f"{prefix}_summary",
-            index=initial_values['summary']-1
+            key=summary_key
         )
         
     with col2:
@@ -302,8 +314,7 @@ def create_rating_section(title, prefix, initial_values):
             "Sentences Rating",
             options=list(STAR_RATINGS.keys()),
             format_func=lambda x: STAR_RATINGS[x],
-            key=f"{prefix}_sentences",
-            index=initial_values['sentences']-1
+            key=sentences_key
         )
         
     with col3:
@@ -316,14 +327,13 @@ def create_rating_section(title, prefix, initial_values):
             "Key Phrases Rating",
             options=list(STAR_RATINGS.keys()),
             format_func=lambda x: STAR_RATINGS[x],
-            key=f"{prefix}_kps",
-            index=initial_values['kps']-1
+            key=kps_key
         )
     
     return {
-        'summary': summary_rating,
-        'sentences': sentences_rating,
-        'kps': kps_rating
+        'summary': st.session_state[summary_key],
+        'sentences': st.session_state[sentences_key],
+        'kps': st.session_state[kps_key]
     }
 
 def highlight_article_text(article_text, article_tokens, selected_aspect_data):
@@ -642,6 +652,10 @@ Remember: Your response must be ONLY a valid JSON object with no additional text
         return None
 
 def main():
+    # Initialize session state
+    if 'selected_model' not in st.session_state:
+        st.session_state['selected_model'] = "meta-llama/llama-3.3-8b-instruct:free"
+    
     st.title("Medical Article Evaluation Visualizer")
     
     # Add CSS styling for highlights
@@ -735,9 +749,6 @@ def main():
     )
 
     # Add model selector
-    if 'selected_model' not in st.session_state:
-        st.session_state.selected_model = "meta-llama/llama-3.3-8b-instruct:free"
-
     st.selectbox(
         "Select AI Model",
         options=[
@@ -775,9 +786,16 @@ def main():
             if selected_aspect in aspect_summaries:
                 aspect_data = aspect_summaries[selected_aspect]
                 
-                # Update only the ratings, not the key elements
+                # Update ratings in both aspect data and session state
                 for key, value in evaluation['ratings'].items():
                     aspect_data[key] = value
+                    # Update corresponding session state
+                    if key.startswith('com_eval_'):
+                        widget_key = f"completeness_{key[9:]}"  # Remove 'com_eval_' prefix
+                        st.session_state[widget_key] = value
+                    elif key.startswith('con_eval_'):
+                        widget_key = f"conciseness_{key[9:]}"  # Remove 'con_eval_' prefix
+                        st.session_state[widget_key] = value
                 
                 st.success("AI evaluation completed successfully!")
     
