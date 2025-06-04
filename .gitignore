@@ -34,3 +34,5 @@ env/
 .uv/ 
 
 .DS_Store
+
+.streamlit/secrets.toml

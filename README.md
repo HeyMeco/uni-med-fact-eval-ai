@@ -25,6 +25,24 @@ This is a Streamlit application that visualizes medical article evaluation data 
 pip install -r requirements.txt
 ```
 
+## Configuration
+
+The application requires an OpenRouter API key. You can configure it in one of three ways:
+
+1. Create a `.streamlit/secrets.toml` file and add:
+```toml
+OPENROUTER_API_KEY = "your-api-key-here"
+```
+
+2. Create a `.env` file in the project root and add:
+```
+OPENROUTER_API_KEY=your-api-key-here
+```
+
+3. Set a system environment variable named `OPENROUTER_API_KEY`
+
+The application will check these locations in order: secrets.toml → .env → system environment variables.
+
 ## Running the Application
 
 1. Make sure your JSON file is in the same directory as the application

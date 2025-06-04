@@ -19,7 +19,7 @@ st.set_page_config(
 )
 
 # OpenRouter API configuration
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')  # Use os.environ.get instead of os.getenv
+OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY", "") or os.environ.get('OPENROUTER_API_KEY')  # Try secrets first, then environment variable
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 def generate_html_color(text, saturation=0.7, lightness_base=0.8, lightness_keyword=0.9):
@@ -422,7 +422,7 @@ def evaluate_with_openrouter(text, aspect, aspect_data=None, article_tokens=None
         })
 
     if not OPENROUTER_API_KEY:
-        st.error("OpenRouter API key not found. Please set it either in the .env file or as a system environment variable named 'OPENROUTER_API_KEY'.")
+        st.error("OpenRouter API key not found. Please set it either in .streamlit/secrets.toml, in the .env file, or as a system environment variable named 'OPENROUTER_API_KEY'.")
         return None
 
     headers = {
