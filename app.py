@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import re
 import requests
 import os
+import hashlib
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -20,6 +21,27 @@ st.set_page_config(
 # OpenRouter API configuration
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+def generate_html_color(text, saturation=0.7, lightness_base=0.8, lightness_keyword=0.9):
+    """Generates a somewhat consistent color pair based on text input."""
+    hash_object = hashlib.md5(text.encode())
+    hex_dig = hash_object.hexdigest()
+    r = int(hex_dig[0:2], 16)
+    g = int(hex_dig[2:4], 16)
+    b = int(hex_dig[4:6], 16)
+
+    # Normalize and adjust lightness
+    base_r = int(r + (255 - r) * (1 - saturation) + (255-r) * (1-lightness_base) ) // 2
+    base_g = int(g + (255 - g) * (1 - saturation) + (255-g) * (1-lightness_base) ) // 2
+    base_b = int(b + (255 - b) * (1 - saturation) + (255-b) * (1-lightness_base) ) // 2
+    base_color = f'#{min(255,base_r):02x}{min(255,base_g):02x}{min(255,base_b):02x}'
+
+    key_r = int(r + (255 - r) * (1 - saturation) + (255-r) * (1-lightness_keyword) ) // 2
+    key_g = int(g + (255 - g) * (1 - saturation) + (255-g) * (1-lightness_keyword) ) // 2
+    key_b = int(b + (255 - b) * (1 - saturation) + (255-b) * (1-lightness_keyword) ) // 2
+    keyword_color = f'#{min(255,key_r):02x}{min(255,key_g):02x}{min(255,key_b):02x}'
+
+    return base_color, keyword_color
 
 # Define aspect labels
 ASPECT_LABELS = {
@@ -37,21 +59,33 @@ ASPECT_LABELS = {
     'rf': 'Reference'
 }
 
-# Define colors for different aspects
+# Define colors for different aspects (base_color, keyword_color)
 ASPECT_COLORS = {
-    'ob': '#DC3545',  # Red
-    'i': '#007BFF',   # Blue
-    'c': '#28A745',   # Green
-    'b': '#FFC107',   # Yellow
-    'p': '#17A2B8',   # Cyan
-    'm': '#6610F2',   # Purple
-    'td': '#FD7E14',  # Orange
-    'pe': '#20C997',  # Teal
-    'fd': '#E83E8C',  # Pink
-    'o': '#6F42C1',   # Indigo
-    'f': '#D39E00',   # Dark Yellow
-    'rf': '#1E7E34'   # Dark Green
+    "ob": ("#FFADAD", "#FFD6A5"),  # Light Red, Lighter Red/Orange
+    "i": ("#A0C4FF", "#BDB2FF"),   # Light Blue, Lighter Blue/Purple
+    "c": ("#9BF699", "#FDFFB6"),   # Light Green, Lighter Green/Yellow
+    "b": ("#FFC6FF", "#CAFFBF"),   # Light Pink, Lighter Pink/Mint
+    "p": ("#FFD6A5", "#FFE5B4"),   # Light Orange, Lighter Orange (peach)
+    "m": ("#BDB2FF", "#E0BBE4"),   # Light Purple, Lighter Purple (lilac)
+    "td": ("#FDFFB6", "#FFFFE0"),  # Light Yellow, Lighter Yellow (lemon chiffon)
+    "pe": ("#CAFFBF", "#E6FFFA"),  # Light Mint, Lighter Mint (alice blueish)
+    "fd": ("#FFC6FF", "#FFDDF4"),  # Light Magenta, Lighter Magenta
+    "o": ("#A0C4FF", "#CDE1FF"),   # Repeating Light Blue, Lighter
+    "f": ("#9BF699", "#D4FAD1"),   # Repeating Light Green, Lighter
+    "rf": ("#FFADAD", "#FFCBCB"),  # Repeating Light Red, Lighter
 }
+
+# This will be populated as aspects are encountered
+USED_ASPECT_COLORS = {}
+
+def get_aspect_colors(aspect_code):
+    if aspect_code not in USED_ASPECT_COLORS:
+        if aspect_code in ASPECT_COLORS:
+            USED_ASPECT_COLORS[aspect_code] = ASPECT_COLORS[aspect_code]
+        else:
+            print(f"Warning: Aspect '{aspect_code}' not in predefined colors. Generating one.")
+            USED_ASPECT_COLORS[aspect_code] = generate_html_color(aspect_code)
+    return USED_ASPECT_COLORS[aspect_code]
 
 # Define star rating options
 STAR_RATINGS = {
@@ -293,50 +327,76 @@ def create_rating_section(title, prefix, initial_values):
     }
 
 def highlight_article_text(article_text, article_tokens, selected_aspect_data):
+    """Highlights article text using token-based approach with sentence and keyword colors."""
     if not selected_aspect_data or 'kes' not in selected_aspect_data:
-        return article_text
-    
-    # Get unique sentence numbers from the key elements
-    sentence_numbers = {ke['sentence'] for ke in selected_aspect_data['kes']}
-    
-    # Create a dictionary to store words to highlight for each sentence
-    highlight_words = {sent_num: set() for sent_num in sentence_numbers}
-    
-    # Collect words to highlight for each sentence
-    for ke in selected_aspect_data['kes']:
-        sent_num = ke['sentence']
-        if sent_num < len(article_tokens):
-            sentence = article_tokens[sent_num]
-            if ke['index'] < len(sentence):
-                highlight_words[sent_num].add(sentence[ke['index']])
-    
-    # Process the article text sentence by sentence
-    highlighted_sentences = []
-    for i, sentence in enumerate(article_text):
-        if i in sentence_numbers:
-            # Wrap the entire sentence in a darker background
-            sentence_start = '<span style="background-color: #f0f0f0; padding: 0.2em 0;">'
-            
-            # Highlight specific words within the sentence
-            words = sentence.split()
-            highlighted_words = []
-            for word in words:
-                # Remove punctuation for comparison but keep it for display
-                clean_word = re.sub(r'[^\w\s]', '', word)
-                if clean_word in highlight_words[i]:
-                    highlighted_words.append(f'<span style="background-color: #ffeb3b;">{word}</span>')
-                else:
-                    highlighted_words.append(word)
-            
-            # Join the words and close the sentence span
-            highlighted_sentence = f"{sentence_start}{' '.join(highlighted_words)}</span>"
-            highlighted_sentences.append(highlighted_sentence)
-        else:
-            highlighted_sentences.append(sentence)
-    
-    return ' '.join(highlighted_sentences)
+        return ' '.join(article_text)
 
-def evaluate_with_openrouter(text, aspect, aspect_data=None):
+    num_sentences = len(article_tokens)
+    token_styles = [
+        [{"sentence_color": None, "keyword_color": None} for _ in range(len(article_tokens[s_idx]))]
+        for s_idx in range(num_sentences)
+    ]
+
+    aspect = selected_aspect_data.get("aspect")
+    if not aspect:
+        return ' '.join(article_text)
+
+    aspect_sentence_color, aspect_keyword_color = get_aspect_colors(aspect)
+    kes_list = selected_aspect_data.get("kes", [])
+
+    # First, mark all sentences that contain key elements
+    involved_sentence_indices = set()
+    for ke_item in kes_list:
+        s_idx = ke_item.get("sentence")
+        if s_idx is not None and 0 <= s_idx < num_sentences:
+            involved_sentence_indices.add(s_idx)
+
+    # Apply sentence-level highlighting
+    for s_idx in involved_sentence_indices:
+        for t_idx in range(len(article_tokens[s_idx])):
+            if token_styles[s_idx][t_idx]["sentence_color"] is None:
+                token_styles[s_idx][t_idx]["sentence_color"] = aspect_sentence_color
+
+    # Apply keyword-level highlighting
+    for ke_item in kes_list:
+        s_idx = ke_item.get("sentence")
+        t_idx = ke_item.get("index")
+
+        if s_idx is not None and t_idx is not None and \
+           0 <= s_idx < num_sentences and 0 <= t_idx < len(article_tokens[s_idx]):
+            token_styles[s_idx][t_idx]["keyword_color"] = aspect_keyword_color
+
+    # Generate HTML output
+    html_output = []
+    for s_idx, sentence_tokens in enumerate(article_tokens):
+        styled_sentence_parts = []
+        for t_idx, token_text in enumerate(sentence_tokens):
+            style_info = token_styles[s_idx][t_idx]
+            bg_color = style_info["keyword_color"] or style_info["sentence_color"]
+            safe_token_text = token_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+            if bg_color:
+                text_color = "#000000"  # Black text for better readability
+                styled_sentence_parts.append(
+                    f'<span style="background-color: {bg_color}; padding: 0.2em 0;">{safe_token_text}</span>'
+                )
+            else:
+                styled_sentence_parts.append(safe_token_text)
+
+        # Reconstruct sentence with proper spacing
+        reconstructed_sentence = ""
+        for i, part in enumerate(styled_sentence_parts):
+            original_token = sentence_tokens[i]
+            if i > 0 and not (original_token in ['.', ',', ';', ':', ')', ']', "'s", "n't", "'"] or \
+               (len(sentence_tokens[i-1]) > 0 and sentence_tokens[i-1] in ['('])):
+                reconstructed_sentence += " "
+            reconstructed_sentence += part
+
+        html_output.append(reconstructed_sentence)
+
+    return ' '.join(html_output)
+
+def evaluate_with_openrouter(text, aspect, aspect_data=None, article_tokens=None):
     """
     Use OpenRouter API to evaluate the text for a specific aspect using structured outputs.
     """
@@ -394,6 +454,12 @@ Evaluate conciseness by answering:
 [Sentences] Are there highlighted sentences irrelevant to this aspect?
 [Key Phrases] Are there highlighted key phrases irrelevant to this aspect?
 
+UNDERSTANDING THE INPUT:
+- You will be shown the full text to evaluate
+- You will also see currently highlighted elements, where words marked with ** are considered key elements
+- Example: In "The study included **50** patients with **diabetes**", the words "50" and "diabetes" are marked as key elements
+- Your task is to evaluate if these highlighted elements are appropriate and complete for the given aspect
+
 You must ALWAYS respond with a valid JSON object using this exact structure:
 {
     "ratings": {
@@ -404,15 +470,9 @@ You must ALWAYS respond with a valid JSON object using this exact structure:
         "com_eval_kps": <integer 1-5>,
         "con_eval_kps": <integer 1-5>
     },
-    "key_elements": [
-        {
-            "sentence": <integer>,
-            "index": <integer>
-        }
-    ],
     "explanation": {
-        "ratings_rationale": "<string>",
-        "key_elements_selection": "<string>"
+        "ratings_rationale": "<string explaining your ratings, including any missing or incorrect elements>",
+        "analysis_details": "<string providing detailed analysis of what information is missing or incorrectly highlighted>"
     }
 }
 
@@ -420,16 +480,35 @@ IMPORTANT:
 1. Do not include any text before or after the JSON
 2. All rating values must be integers between 1 and 5
 3. The response must be valid JSON that can be parsed
-4. Do not include any markdown formatting or code blocks"""
+4. Do not include any markdown formatting or code blocks
+5. In the explanation, be specific about any missing or incorrectly highlighted information"""
 
     # Prepare the evaluation context with existing summary and key elements if available
     evaluation_context = f"Aspect to evaluate: {aspect}\n\n"
     if aspect_data:
         evaluation_context += f"Existing summary: {aspect_data.get('summary', 'None')}\n\n"
         if 'kes' in aspect_data:
-            evaluation_context += "Existing key elements:\n"
+            evaluation_context += "Currently highlighted elements:\n"
+            # Create a mapping of sentence indices to their key elements
+            sentence_to_kes = {}
             for ke in aspect_data['kes']:
-                evaluation_context += f"- Sentence {ke['sentence']}, Word {ke['index']}\n"
+                s_idx = ke['sentence']
+                if s_idx not in sentence_to_kes:
+                    sentence_to_kes[s_idx] = []
+                sentence_to_kes[s_idx].append(ke['index'])
+            
+            # For each sentence that has key elements, show the sentence with highlighted words
+            for s_idx in sorted(sentence_to_kes.keys()):
+                if 0 <= s_idx < len(article_tokens):
+                    # Build the sentence with highlighted words marked with **
+                    sentence_parts = []
+                    for word_idx, word in enumerate(article_tokens[s_idx]):
+                        if word_idx in sentence_to_kes[s_idx]:
+                            sentence_parts.append(f"**{word}**")
+                        else:
+                            sentence_parts.append(word)
+                    marked_sentence = ' '.join(sentence_parts)
+                    evaluation_context += f"- {marked_sentence}\n"
         evaluation_context += "\n"
 
     user_message = f"""Evaluate the following medical text for the aspect of {aspect}.
@@ -496,12 +575,13 @@ Remember: Your response must be ONLY a valid JSON object with no additional text
                 evaluation = json.loads(response_content)
                 
                 # Validate the required structure
-                required_keys = ['ratings', 'key_elements', 'explanation']
+                required_keys = ['ratings', 'explanation']
                 required_ratings = [
                     'com_eval_summary', 'con_eval_summary',
                     'com_eval_sentences', 'con_eval_sentences',
                     'com_eval_kps', 'con_eval_kps'
                 ]
+                required_explanation = ['ratings_rationale', 'analysis_details']
                 
                 # Check for required top-level keys
                 if not all(key in evaluation for key in required_keys):
@@ -512,6 +592,11 @@ Remember: Your response must be ONLY a valid JSON object with no additional text
                 if not all(key in evaluation['ratings'] for key in required_ratings):
                     missing = [key for key in required_ratings if key not in evaluation['ratings']]
                     raise ValueError(f"Missing required rating keys: {', '.join(missing)}")
+                
+                # Check for required explanation keys
+                if not all(key in evaluation['explanation'] for key in required_explanation):
+                    missing = [key for key in required_explanation if key not in evaluation['explanation']]
+                    raise ValueError(f"Missing required explanation keys: {', '.join(missing)}")
                 
                 # Validate ratings are integers between 1 and 5
                 for key, value in evaluation['ratings'].items():
@@ -526,8 +611,8 @@ Remember: Your response must be ONLY a valid JSON object with no additional text
                         st.write("### AI Reasoning")
                         st.write("#### Rating Rationale")
                         st.write(evaluation['explanation']['ratings_rationale'])
-                        st.write("#### Key Elements Selection Process")
-                        st.write(evaluation['explanation']['key_elements_selection'])
+                        st.write("#### Analysis Details")
+                        st.write(evaluation['explanation']['analysis_details'])
                     
                     # Show token usage if available
                     if 'usage' in result:
@@ -558,6 +643,48 @@ Remember: Your response must be ONLY a valid JSON object with no additional text
 
 def main():
     st.title("Medical Article Evaluation Visualizer")
+    
+    # Add CSS styling for highlights
+    st.markdown("""
+        <style>
+        .highlight-sentence {
+            padding: 1px 3px;
+            border-radius: 3px;
+            margin: 0 1px;
+            transition: background-color 0.2s;
+        }
+        .highlight-keyword {
+            padding: 1px 3px;
+            border-radius: 3px;
+            margin: 0 1px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        .legend {
+            margin-top: 30px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .legend h3 {
+            margin-top: 0;
+        }
+        .legend-item {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        .color-swatch {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #777;
+            margin-right: 5px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
     # Load data
     data = load_json_data()
@@ -636,19 +763,21 @@ def main():
         selected_aspect_data = aspect_summaries.get(selected_aspect)
         
         # Get AI evaluation
-        evaluation = evaluate_with_openrouter(full_text, ASPECT_LABELS[selected_aspect], selected_aspect_data)
+        evaluation = evaluate_with_openrouter(
+            full_text, 
+            ASPECT_LABELS[selected_aspect], 
+            selected_aspect_data,
+            article_tokens
+        )
         
         if evaluation:
             # Update the aspect data with AI evaluation
             if selected_aspect in aspect_summaries:
                 aspect_data = aspect_summaries[selected_aspect]
                 
-                # Update ratings
+                # Update only the ratings, not the key elements
                 for key, value in evaluation['ratings'].items():
                     aspect_data[key] = value
-                
-                # Update key elements
-                aspect_data['kes'] = evaluation['key_elements']
                 
                 st.success("AI evaluation completed successfully!")
     
@@ -669,14 +798,21 @@ def main():
     st.markdown(highlighted_article, unsafe_allow_html=True)
     
     # Add legend for highlighting
-    st.markdown("""
-    <div style="margin-top: 1em; padding: 1em; border-radius: 0.5em; background-color: #f0f2f6;">
-        <p style="margin: 0;"><strong>Legend:</strong> 
-        Sentences with a <span style="background-color: #f0f0f0; padding: 0.2em 0.4em;">light gray background</span> 
-        contain key elements for the selected aspect. Within these sentences, specific key words are highlighted in 
-        <span style="background-color: #ffeb3b;">yellow</span>.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    if selected_aspect in aspect_summaries:
+        aspect_sentence_color, aspect_keyword_color = get_aspect_colors(selected_aspect)
+        st.markdown(f"""
+        <div class="legend">
+            <h3>Highlighting Legend</h3>
+            <div class="legend-item">
+                <span class="color-swatch" style="background-color: {aspect_sentence_color};"></span>
+                <span>Sentence containing key elements</span>
+            </div>
+            <div class="legend-item">
+                <span class="color-swatch" style="background-color: {aspect_keyword_color};"></span>
+                <span>Key element</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     
     if selected_aspect in aspect_summaries:
         aspect_data = aspect_summaries[selected_aspect]
